@@ -70,6 +70,7 @@ export const copy = {
     // mobile home / quest (Figma-aligned surfaces)
     home: 'Home',
     myInfo: 'Me',
+    signOutLabel: 'Sign out',
     allQuests: 'All quests',
     notStarted: 'Not started',
     doneLabel: 'Done',
@@ -153,6 +154,7 @@ export const copy = {
     // mobile home / quest (Figma-aligned surfaces)
     home: '홈',
     myInfo: '내정보',
+    signOutLabel: '로그아웃',
     allQuests: '전체 퀘스트',
     notStarted: '진행 안 함',
     doneLabel: '완료',
