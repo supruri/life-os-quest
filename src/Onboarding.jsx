@@ -148,8 +148,8 @@ function ChoiceStep({ title, subtitle, options, isSelected, onSelect, onNext, ne
   return (
     <div className="flex min-h-[80vh] flex-col">
       <div className="flex-1">
-        <h2 className="text-xl font-black text-slate-950">{title}</h2>
-        <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+        <h2 className="text-center text-xl font-black text-slate-950">{title}</h2>
+        <p className="mt-1 text-center text-sm text-slate-500">{subtitle}</p>
         <div className="mt-6 grid gap-2.5">
           {options.map((opt) => (
             <LockableCard
@@ -176,7 +176,7 @@ function ChoiceStep({ title, subtitle, options, isSelected, onSelect, onNext, ne
 function GoalStep({ value, onChange, onNext }) {
   return (
     <ChoiceStep
-      title="무엇을 시작할까요?"
+      title="당신의 목표는 무엇인가요?"
       subtitle="지금은 운동부터 열려 있어요."
       options={GOAL_OPTIONS.filter((o) => !o.legacy)}
       isSelected={(id) => value.includes(id)}
@@ -205,8 +205,8 @@ function StepLayout({ title, subtitle, children, onNext, nextDisabled, nextLabel
   return (
     <div className="flex min-h-[80vh] flex-col">
       <div className="flex-1">
-        <h2 className="text-xl font-black text-slate-950">{title}</h2>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+        <h2 className="text-center text-xl font-black text-slate-950">{title}</h2>
+        {subtitle && <p className="mt-1 text-center text-sm text-slate-500">{subtitle}</p>}
         <div className="mt-6">{children}</div>
       </div>
       <div className="sticky bottom-0 mt-6 bg-gradient-to-t from-[#f7f8fb] via-[#f7f8fb] to-transparent pb-2 pt-3">
@@ -220,17 +220,19 @@ function StepLayout({ title, subtitle, children, onNext, nextDisabled, nextLabel
 
 function DreamStep({ value, onChange, onNext }) {
   return (
-    <StepLayout title="당신의 꿈은 무엇인가요?" subtitle="자유롭게 적어 주세요." onNext={onNext} nextDisabled={!value?.trim()}>
+    <StepLayout title="달리기에서의 목표는 무엇인가요?" subtitle="자유롭게 적어 주세요." onNext={onNext} nextDisabled={!value?.trim()}>
+      {/* Figma Frame 7: counter sits inside the field top-right, helper text below the field. */}
       <div className="relative">
         <textarea
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value.slice(0, 240))}
           rows={5}
           placeholder="예) 3개월 안에 5km를 쉬지 않고 완주하고 싶어요."
-          className="w-full resize-none rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500"
+          className="w-full resize-none rounded-xl border border-slate-200 bg-white p-4 pr-16 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500"
         />
-        <span className="absolute bottom-3 right-3 text-xs text-slate-400">{(value ?? '').length}/240</span>
+        <span className="absolute right-3 top-3 text-xs text-slate-400">{(value ?? '').length}/240</span>
       </div>
+      <p className="mt-2 text-xs text-slate-400">구체적으로 적을수록 플랜이 정확해져요.</p>
     </StepLayout>
   )
 }
@@ -285,7 +287,7 @@ function ButtonFieldsStep({ title, subtitle, fields, values, onChange, onNext, l
 function DurationStep({ value, onChange, onNext }) {
   return (
     <StepLayout
-      title="얼마 동안의 플랜을 짜드릴까요?"
+      title="얼마동안의 플랜을 짜드릴까요?"
       subtitle="기간에 맞춰 성장 계획을 설계해요."
       onNext={onNext}
       nextDisabled={!value}
@@ -310,9 +312,9 @@ function SummaryPopup({ profile, onConfirm }) {
           <Sparkles size={24} />
         </div>
         <h2 className="text-center text-lg font-black leading-7 text-slate-950">
-          당신을 위한
+          <span className="text-indigo-600">{profile.duration ?? ''}</span>간의 플랜이
           <br />
-          <span className="text-indigo-600">{profile.duration ?? ''}</span>간의 플랜이 완성됐어요!
+          완성되었습니다!
         </h2>
         <div className="mt-5 rounded-xl bg-slate-50 p-4">
           <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-400">내 목표</p>
@@ -378,7 +380,7 @@ export default function Onboarding({ initialProfile, onProfileChange, onComplete
         {step === 3 && <DreamStep value={profile.dream} onChange={(dream) => patch({ dream })} onNext={next} />}
         {step === 4 && (
           <ButtonFieldsStep
-            title="현재 내 상태는 어떤가요?"
+            title="현재의 내 상태"
             subtitle="지금의 나를 알려 주세요."
             fields={STATE_FIELDS}
             values={profile.currentState}
@@ -388,7 +390,7 @@ export default function Onboarding({ initialProfile, onProfileChange, onComplete
         )}
         {step === 5 && (
           <ButtonFieldsStep
-            title="당신의 생활 패턴은 어떤가요?"
+            title="내 생활패턴"
             subtitle="일상을 알려 주면 더 잘 맞춰 드려요."
             fields={PATTERN_FIELDS}
             values={profile.pattern}
