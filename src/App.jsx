@@ -10,6 +10,12 @@ import AiGenerationOverlay from './ai/AiGenerationOverlay.jsx'
 import AiRevealSheet from './ai/AiRevealSheet.jsx'
 import AiStatusChip from './ai/AiStatusChip.jsx'
 import { useAiFlow } from './ai/useAiFlow.js'
+import { useIsDesktop } from './useMediaQuery.js'
+import { buildHomeQuests, buildDoneMap } from './homeState.js'
+import { buildWeekTrail, weekProgress, todayKey } from './runningTrail.js'
+import MobileHome from './mobile/MobileHome.jsx'
+import MobileQuest from './mobile/MobileQuest.jsx'
+import BottomNav from './mobile/BottomNav.jsx'
 
 const GOAL_LABEL_MAP = Object.fromEntries(GOAL_OPTIONS.map((o) => [o.id, o.label]))
 import { motion, AnimatePresence } from 'framer-motion'
@@ -1263,6 +1269,39 @@ export default function App() {
   const scheduledCounts = useMemo(() => countMissionIds(Object.values(currentWeekSchedule).flat()), [currentWeekSchedule])
   const previousWeekRef = getPreviousWeekRef(state.selectedVersion, state.selectedWeek)
 
+  // Responsive split: below `lg` the Figma mobile surfaces render instead of the dashboard.
+  // Two presentation trees over ONE state source — the dashboard's content (planner, pool,
+  // radar) genuinely differs from the mobile screen, so breakpoint classes alone can't do it.
+  const isDesktop = useIsDesktop()
+  const [mobileTab, setMobileTab] = useState('home')
+
+  // Real-state equivalent of the /previews fixtures RunningPlanView reads.
+  // Depends on state.schedules, NOT currentWeekSchedule: getWeekSchedule returns a fresh
+  // object every render, so keying the memo on it would defeat memoization entirely.
+  const homeModel = useMemo(() => {
+    const { quests, weekSchedule } = buildHomeQuests({
+      schedule: getWeekSchedule(state.schedules, state.selectedVersion, state.selectedWeek),
+      missionMap,
+      resolve: (value) => tr(value, lang),
+      overlayFor: (dayId, missionId) =>
+        aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, dayId, missionId),
+    })
+    const doneMap = buildDoneMap(quests, (dayId, missionId) =>
+      Boolean(state.completed[getMissionKey(state.selectedVersion, state.selectedWeek, dayId, missionId)]),
+    )
+    // Only mark a day as "today" when the SELECTED week is actually the current week —
+    // otherwise browsing to week 12 would draw the runner marker and claim it is today.
+    const todayRef = getTodayVersionWeekDay()
+    const isCurrentWeek = todayRef.version === state.selectedVersion && todayRef.week === state.selectedWeek
+    const trail = buildWeekTrail({
+      weekSchedule,
+      quests,
+      today: isCurrentWeek ? todayKey() : null,
+      doneMap,
+    })
+    return { quests, doneMap, trail, isCurrentWeek, progress: weekProgress(trail.nodes) }
+  }, [state.schedules, state.completed, state.aiPlan, state.selectedVersion, state.selectedWeek, lang])
+
   const updateState = (patch) => setState((current) => ({ ...current, ...patch }))
 
   // --- B-2: AI personalization (Supabase ai_plans queue, poll-based) ---
@@ -1542,41 +1581,199 @@ export default function App() {
     )
   }
 
+  // Rendered by both trees; only one is mounted at a time.
+  const aiPortal = createPortal(
+    <>
+      <AnimatePresence>
+        {aiFlow.surface === 'cover' && <AiGenerationOverlay key="cover" />}
+        {aiFlow.surface === 'sheet' && (
+          <AiRevealSheet
+            key="sheet"
+            goalSummary={state.aiPlan?.goalSummary ? tr(state.aiPlan.goalSummary, lang) : ''}
+            summaryLines={(state.aiPlan?.summaryLines ?? []).map((l) => tr(l, lang))}
+            onDismiss={aiFlow.onDismiss}
+          />
+        )}
+      </AnimatePresence>
+      {(aiFlow.surface === 'chip-pending' || aiFlow.surface === 'chip-error') && (
+        <AiStatusChip variant={aiFlow.surface} onRetry={aiFlow.onRetry} />
+      )}
+    </>,
+    document.body,
+  )
+
+  if (!isDesktop) {
+    const currentDayKey = todayKey()
+    const todayNode = homeModel.trail.nodes.find((node) => node.dayKey === currentDayKey)
+    const todaySessions = todayNode?.sessions ?? []
+    const todayIsDone = todaySessions.length > 0 && todaySessions.every((q) => homeModel.doneMap[q.id])
+    const weekPercent = weeklyMissionCount ? Math.round((weekCompleted / weeklyMissionCount) * 100) : 0
+    const todayDayObj = days.find((day) => day.id === currentDayKey) ?? days[0]
+
+    // Keep both tab states in sync, so crossing the breakpoint doesn't jump to a different tab.
+    const selectMobileTab = (id) => {
+      setMobileTab(id)
+      if (id === 'quest' || id === 'progress' || id === 'diary') updateState({ activeTab: id })
+    }
+    // Mobile has no week nav; this is the only way back to the current week once the user
+    // navigates away via the progress/diary tabs.
+    const goToToday = () => {
+      const { version: v, week: w, dayId } = getTodayVersionWeekDay()
+      updateState({ selectedVersion: v, selectedWeek: w, selectedDay: dayId })
+    }
+
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col bg-slate-50 text-slate-900">
+        {mobileTab === 'home' && (
+          <MobileHome
+            c={c}
+            lang={lang}
+            displayName={`${currentUser.name?.split('@')[0] || '회원'}님`}
+            weekLabel={`${version.label} · ${c.week} ${state.selectedWeek}`}
+            quests={homeModel.quests}
+            trailNodes={homeModel.trail.nodes}
+            progress={homeModel.progress}
+            isCurrentWeek={homeModel.isCurrentWeek}
+            onGoToToday={goToToday}
+            vitalityDelta={weeklyStatTotals.vitality ?? 0}
+            todayKey={currentDayKey}
+            todayLabel={tr(todayDayObj.label, lang)}
+            todaySessions={todaySessions}
+            todayDone={todayIsDone}
+            onStartToday={() => {
+              // Reset version+week too — setting only selectedDay would write the completion
+              // into whatever week the user had browsed to.
+              goToToday()
+              selectMobileTab('quest')
+            }}
+          />
+        )}
+
+        {mobileTab === 'quest' && (
+          <MobileQuest
+            c={c}
+            days={days}
+            tr={tr}
+            lang={lang}
+            selectedDayId={selectedDay.id}
+            onSelectDay={(dayId) => updateState({ selectedDay: dayId })}
+            dayMissions={dayMissions}
+            dayCompleted={dayCompleted}
+            isRestDay={Boolean(selectedDay.rest)}
+            isDone={(missionId) =>
+              Boolean(state.completed[getMissionKey(state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)])
+            }
+            onToggle={toggleMission}
+            overlayFor={(missionId) =>
+              aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)
+            }
+            dateLabel={formatDate(getDayDate(state.selectedVersion, state.selectedWeek, selectedDay.id))}
+            weekPercent={weekPercent}
+            onOpenProgress={() => selectMobileTab('progress')}
+            isCurrentWeek={homeModel.isCurrentWeek}
+            onGoToToday={goToToday}
+            memoTitle={memoTitle}
+            memoHint={memoHint}
+            memoPlaceholder={memoPlaceholder}
+            memoValue={state.memos[memoKey] ?? ''}
+            onMemoChange={setMemo}
+          />
+        )}
+
+        {mobileTab === 'progress' && (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+            <ProgressDashboard
+              curriculum={curriculum}
+              lang={lang}
+              totalMissionCount={totalMissionCount}
+              maxStatTotals={maxStatTotals}
+              completed={progressCompleted}
+              totalXp={progressXp}
+              activeLevel={progressActiveLevel}
+              nextLevel={progressNextLevel}
+              levelProgress={progressLevelProgress}
+              statTotals={progressStatTotals}
+              overallMissions={progressOverallMissions}
+              overallPercent={progressOverallPercent}
+              versionStats={progressVersionStats}
+              selectedVersion={state.selectedVersion}
+              selectedWeek={state.selectedWeek}
+              allUsersData={allUsersData}
+              progressUserId={progressUserId ?? currentUserId}
+              onSelectProgressUser={setProgressUserId}
+              onSelect={(versionKey, week) => {
+                updateState({ selectedVersion: versionKey, selectedWeek: week, selectedDay: 'mon' })
+                selectMobileTab('quest')
+              }}
+            />
+          </div>
+        )}
+
+        {mobileTab === 'diary' && (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+            <DiaryDashboard
+              memos={state.memos}
+              selectedVersion={state.selectedVersion}
+              selectedWeek={state.selectedWeek}
+              diaryView={state.diaryView ?? 'week'}
+              lang={lang}
+              onChangeView={(diaryView) => updateState({ diaryView })}
+              onSelectWeek={(versionKey, week) => {
+                updateState({ selectedVersion: versionKey, selectedWeek: week, selectedDay: 'mon' })
+                selectMobileTab('quest')
+              }}
+            />
+          </div>
+        )}
+
+        {mobileTab === 'me' && (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">{c.activeMember}</p>
+              <p className="mt-1 truncate text-base font-black text-slate-950">{currentUser.name}</p>
+              <div className="mt-4 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 p-1">
+                {['ko', 'en'].map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => updateState({ lang: option })}
+                    className={`h-9 rounded-md text-xs font-black transition ${
+                      lang === option ? 'bg-slate-950 text-white' : 'text-slate-500'
+                    }`}
+                  >
+                    {option.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="mt-3 h-11 w-full rounded-xl border border-slate-200 text-sm font-black text-slate-500"
+              >
+                로그아웃
+              </button>
+            </div>
+          </div>
+        )}
+
+        <BottomNav active={mobileTab} onSelect={selectMobileTab} c={c} />
+        {aiPortal}
+      </main>
+    )
+  }
+
   return (
     <main className="life-dashboard min-h-screen bg-[#f7f8fb] text-slate-900">
       <section className="mx-auto flex w-full min-w-0 max-w-[96rem] flex-col gap-6 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8 2xl:max-w-[104rem]">
-        <header className="grid gap-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-[1.15fr_0.75fr_0.95fr] md:items-center">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
-              <Sparkles size={16} />
-              {c.questBadge}
-            </div>
-            <h1 className="text-3xl font-black tracking-normal text-slate-950 sm:text-5xl">Life Game</h1>
-            <div className="mt-4">
-              <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">이번 주 획득 스탯</p>
-              <div className="grid gap-2">
-                {characterStats.map((stat) => {
-                  const weekPts = weeklyStatTotals[stat.id] ?? 0
-                  const maxWeekPts = 50
-                  const pct = Math.min(100, Math.round((weekPts / maxWeekPts) * 100))
-                  return (
-                    <div key={stat.id} className="flex items-center gap-2">
-                      <span className="w-14 shrink-0 text-xs font-black text-slate-500">{tr(stat.label, lang)}</span>
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                        <div className={`h-full rounded-full bg-gradient-to-r ${stat.color} transition-all`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="w-6 shrink-0 text-right text-xs font-black text-slate-400">{weekPts}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+        {/* Desktop top bar. Level/XP, weekly stats and the radar moved to the right rail
+            so the mission grid stops competing with them for width. */}
+        <header className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
+            <Sparkles size={16} />
+            {c.questBadge}
           </div>
-
-          <StatRadar lang={lang} c={c} statTotals={statTotals} maxStatTotals={maxStatTotals} overallPower={overallPower} />
-
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <h1 className="text-2xl font-black tracking-normal text-slate-950">Life Game</h1>
+          <div className="ml-auto flex flex-wrap items-center gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">{c.activeMember ?? copy.en.activeMember}</p>
                 <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
@@ -1606,24 +1803,37 @@ export default function App() {
                 ))}
               </div>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-500">{c.currentLevel}</p>
-                <p className="mt-1 text-xl font-black text-slate-950">{tr(activeLevel.name, lang)}</p>
-              </div>
-              <div className="grid h-12 w-12 place-items-center rounded-lg bg-slate-950 text-white">
-                <Trophy size={24} />
-              </div>
-            </div>
-            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${levelProgress}%` }} />
-            </div>
-            <div className="mt-2 flex justify-between text-sm text-slate-500">
-              <span>{totalXp} XP</span>
-              <span>{nextLevel ? c.untilXp(nextLevel.min, levelProgress) : c.highestLevel}</span>
-            </div>
-          </div>
         </header>
+
+        <div className="grid gap-5 lg:grid-cols-[13rem_minmax(0,1fr)_20rem] lg:items-start">
+          <aside className="grid gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-5">
+            <TabButton
+              active={state.activeTab === 'quest'}
+              icon={Compass}
+              label={c.quest}
+              onClick={() => updateState({ activeTab: 'quest' })}
+            />
+            <TabButton
+              active={state.activeTab === 'progress'}
+              icon={Gauge}
+              label={c.progress}
+              onClick={() => updateState({ activeTab: 'progress' })}
+            />
+            <TabButton
+              active={state.showToc}
+              icon={ListTree}
+              label={c.roadmap}
+              onClick={() => updateState({ showToc: !state.showToc, activeTab: 'quest' })}
+            />
+            <TabButton
+              active={state.activeTab === 'diary'}
+              icon={NotebookPen}
+              label={c.diary ?? copy.en.diary}
+              onClick={() => updateState({ activeTab: 'diary' })}
+            />
+          </aside>
+
+          <div className="flex min-w-0 flex-col gap-5">
 
         {state.profile && (state.profile.goals?.length || state.profile.duration || state.profile.dream) && (
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -1658,40 +1868,6 @@ export default function App() {
           </section>
         )}
 
-        <nav className="grid grid-cols-4 gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:flex sm:w-fit">
-          <TabButton
-            active={state.activeTab === 'quest'}
-            icon={Compass}
-            label={c.quest}
-            onClick={() => updateState({ activeTab: 'quest' })}
-          />
-          <TabButton
-            active={state.activeTab === 'progress'}
-            icon={Gauge}
-            label={c.progress}
-            onClick={() => updateState({ activeTab: 'progress' })}
-          />
-          <TabButton
-            active={state.showToc}
-            icon={ListTree}
-            label={c.roadmap}
-            onClick={() => updateState({ showToc: !state.showToc, activeTab: 'quest' })}
-          />
-          <TabButton
-            active={state.activeTab === 'diary'}
-            icon={NotebookPen}
-            label={c.diary ?? copy.en.diary}
-            onClick={() => updateState({ activeTab: 'diary' })}
-          />
-        </nav>
-
-        <CharacterStatus
-          c={c}
-          lang={lang}
-          statTotals={statTotals}
-          compact
-        />
-
         {state.activeTab === 'quest' ? (
           <>
             {state.showToc && (
@@ -1714,7 +1890,9 @@ export default function App() {
 
         <section className="grid min-w-0 gap-4">
           <section className="min-w-0 space-y-4">
-            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.56fr)_minmax(0,1fr)]">
+            {/* Was a 0.56fr/1fr split at full page width. Inside the 3-column shell that track
+                collapsed to ~284px and squeezed the three Stat tiles to ~73px, so it stacks now. */}
+            <div className="grid min-w-0 gap-4">
               <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -1791,7 +1969,7 @@ export default function App() {
               />
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[1fr_280px] xl:grid-cols-[1fr_320px]">
+            <div className="grid gap-4">
               <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -1802,6 +1980,12 @@ export default function App() {
                       {selectedDay.rest ? c.todayRest : c.todayMissions}
                     </h2>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{tr(selectedDayPlan, lang)}</p>
+                    {/* Q-A: Figma's `n / m 달성` row, derived from data that already exists. */}
+                    {!selectedDay.rest && (
+                      <p className="mt-2 text-sm font-black text-indigo-600">
+                        {c.achieved(dayCompleted, dayMissions.length)}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1856,6 +2040,10 @@ export default function App() {
                           </div>
                           <p className="mt-4 text-lg font-black text-slate-950">{tr(mission.ko, lang)}</p>
                           <p className="mt-1 text-sm font-semibold text-slate-500">{mission.name}</p>
+                          {/* Q-A: per-card status label from Figma. Interaction is unchanged. */}
+                          <p className={`mt-1 text-xs font-black ${completed ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {completed ? c.doneLabel : c.notStarted}
+                          </p>
                           <p className="mt-3 min-h-10 text-sm leading-5 text-slate-500">
                             {overlay ? tr({ ko: overlay.objectiveKo, en: overlay.objectiveEn }, lang) : tr(mission.detail, lang)}
                           </p>
@@ -1882,16 +2070,6 @@ export default function App() {
                 )}
               </div>
 
-              <ActivityPool
-                c={c}
-                lang={lang}
-                requiredCounts={requiredCounts}
-                scheduledCounts={scheduledCounts}
-                onQuickAdd={(missionId) => moveMissionToDay({ missionId, sourceDayId: 'pool', targetDayId: selectedDay.id })}
-                canLoadPrevious={Boolean(previousWeekRef)}
-                onLoadPreviousWeek={loadPreviousWeekPlan}
-                onResetPlan={resetCurrentPlan}
-              />
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -1969,25 +2147,67 @@ export default function App() {
             }
           />
         )}
-        {createPortal(
-          <>
-            <AnimatePresence>
-              {aiFlow.surface === 'cover' && <AiGenerationOverlay key="cover" />}
-              {aiFlow.surface === 'sheet' && (
-                <AiRevealSheet
-                  key="sheet"
-                  goalSummary={state.aiPlan?.goalSummary ? tr(state.aiPlan.goalSummary, lang) : ''}
-                  summaryLines={(state.aiPlan?.summaryLines ?? []).map((l) => tr(l, lang))}
-                  onDismiss={aiFlow.onDismiss}
-                />
-              )}
-            </AnimatePresence>
-            {(aiFlow.surface === 'chip-pending' || aiFlow.surface === 'chip-error') && (
-              <AiStatusChip variant={aiFlow.surface} onRetry={aiFlow.onRetry} />
+          </div>
+
+          <aside className="flex min-w-0 flex-col gap-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-500">{c.currentLevel}</p>
+                  <p className="mt-1 text-xl font-black text-slate-950">{tr(activeLevel.name, lang)}</p>
+                </div>
+                <div className="grid h-12 w-12 place-items-center rounded-lg bg-slate-950 text-white">
+                  <Trophy size={24} />
+                </div>
+              </div>
+              <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${levelProgress}%` }} />
+              </div>
+              <div className="mt-2 flex justify-between text-sm text-slate-500">
+                <span>{totalXp} XP</span>
+                <span>{nextLevel ? c.untilXp(nextLevel.min, levelProgress) : c.highestLevel}</span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">이번 주 획득 스탯</p>
+              <div className="grid gap-2">
+                {characterStats.map((stat) => {
+                  const weekPts = weeklyStatTotals[stat.id] ?? 0
+                  const pct = Math.min(100, Math.round((weekPts / 50) * 100))
+                  return (
+                    <div key={stat.id} className="flex items-center gap-2">
+                      <span className="w-14 shrink-0 text-xs font-black text-slate-500">{tr(stat.label, lang)}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div className={`h-full rounded-full bg-gradient-to-r ${stat.color} transition-all`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-6 shrink-0 text-right text-xs font-black text-slate-400">{weekPts}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <StatRadar lang={lang} c={c} statTotals={statTotals} maxStatTotals={maxStatTotals} overallPower={overallPower} />
+
+            <CharacterStatus c={c} lang={lang} statTotals={statTotals} compact />
+
+            {state.activeTab === 'quest' && (
+              <ActivityPool
+                c={c}
+                lang={lang}
+                requiredCounts={requiredCounts}
+                scheduledCounts={scheduledCounts}
+                onQuickAdd={(missionId) => moveMissionToDay({ missionId, sourceDayId: 'pool', targetDayId: selectedDay.id })}
+                canLoadPrevious={Boolean(previousWeekRef)}
+                onLoadPreviousWeek={loadPreviousWeekPlan}
+                onResetPlan={resetCurrentPlan}
+              />
             )}
-          </>,
-          document.body,
-        )}
+          </aside>
+        </div>
+
+        {aiPortal}
       </section>
     </main>
   )
