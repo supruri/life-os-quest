@@ -16,6 +16,9 @@ import { buildWeekTrail, weekProgress, todayKey } from './runningTrail.js'
 import MobileHome from './mobile/MobileHome.jsx'
 import MobileQuest from './mobile/MobileQuest.jsx'
 import BottomNav from './mobile/BottomNav.jsx'
+import DesktopShell from './desktop/DesktopShell.jsx'
+import DesktopHome from './desktop/DesktopHome.jsx'
+import DesktopQuest from './desktop/DesktopQuest.jsx'
 
 const GOAL_LABEL_MAP = Object.fromEntries(GOAL_OPTIONS.map((o) => [o.id, o.label]))
 import { motion, AnimatePresence } from 'framer-motion'
@@ -1773,454 +1776,135 @@ export default function App() {
     )
   }
 
+  // --- Desktop interior (Figma visual system) -------------------------------------------------
+  // Replaces the legacy `.life-dashboard` 3-column frame. That frame was a separate dark theme
+  // (styles.css repaints every utility under it), so desktop and mobile read as two products.
+  // Desktop now shares the mobile Figma system and differs only in layout: a persistent left rail,
+  // multi-column composition, and the full week visible at once. All data comes from the same
+  // homeModel/state the mobile screens use — nothing new is stored.
+  const desktopDayKey = todayKey()
+  const desktopTodayNode = homeModel.trail.nodes.find((node) => node.dayKey === desktopDayKey)
+  const desktopTodaySessions = desktopTodayNode?.sessions ?? []
+  const desktopTodayDone =
+    desktopTodaySessions.length > 0 && desktopTodaySessions.every((q) => homeModel.doneMap[q.id])
+  const desktopWeekPercent = weeklyMissionCount ? Math.round((weekCompleted / weeklyMissionCount) * 100) : 0
+  const desktopTodayDayObj = days.find((day) => day.id === desktopDayKey) ?? days[0]
+  const desktopGoToToday = () => {
+    const { version: v, week: w, dayId } = getTodayVersionWeekDay()
+    updateState({ selectedVersion: v, selectedWeek: w, selectedDay: dayId })
+  }
+  // Persisted state can still carry a legacy tab id (the old rail had 'roadmap'), which would
+  // otherwise render an empty page. Unknown ids fall back to the quest board.
+  const desktopTab = ['home', 'quest', 'progress', 'diary'].includes(state.activeTab)
+    ? state.activeTab
+    : 'quest'
+  const desktopWeekLabel = `${version.label} · ${c.week} ${state.selectedWeek}`
+
   return (
-    <main className="life-dashboard min-h-screen bg-[#f7f8fb] text-slate-900">
-      <section className="mx-auto flex w-full min-w-0 max-w-[96rem] flex-col gap-6 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8 2xl:max-w-[104rem]">
-        {/* Desktop top bar. Level/XP, weekly stats and the radar moved to the right rail
-            so the mission grid stops competing with them for width. */}
-        <header className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
-            <Sparkles size={16} />
-            {c.questBadge}
-          </div>
-          <h1 className="text-2xl font-black tracking-normal text-slate-950">Life Game</h1>
-          <div className="ml-auto flex flex-wrap items-center gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-wide text-slate-500">{c.activeMember ?? copy.en.activeMember}</p>
-                <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <UserRound size={15} className="shrink-0 text-emerald-600" />
-                  <span className="min-w-0 truncate text-sm font-black text-slate-950">{currentUser.name}</span>
-                  <button
-                    type="button"
-                    onClick={handleSignOut}
-                    className="ml-auto shrink-0 rounded-md px-2 py-1 text-xs font-black text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    로그아웃
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 rounded-lg border border-slate-200 bg-white p-1">
-                {['ko', 'en'].map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => updateState({ lang: option })}
-                    className={`h-8 rounded-md px-3 text-xs font-black transition ${
-                      lang === option ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-100'
-                    }`}
-                  >
-                    {option.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-        </header>
+    <DesktopShell
+      c={c}
+      lang={lang}
+      activeTab={desktopTab}
+      onSelectTab={(id) => updateState({ activeTab: id })}
+      userName={currentUser.name}
+      onSignOut={handleSignOut}
+      onChangeLang={(option) => updateState({ lang: option })}
+    >
+      {desktopTab === 'home' && (
+        <DesktopHome
+          c={c}
+          displayName={`${currentUser.name?.split('@')[0] || '회원'}님`}
+          weekLabel={desktopWeekLabel}
+          quests={homeModel.quests}
+          trailNodes={homeModel.trail.nodes}
+          progress={homeModel.progress}
+          isCurrentWeek={homeModel.isCurrentWeek}
+          onGoToToday={desktopGoToToday}
+          vitalityDelta={weeklyStatTotals.vitality ?? 0}
+          todayKey={desktopDayKey}
+          todayLabel={tr(desktopTodayDayObj.label, lang)}
+          todaySessions={desktopTodaySessions}
+          todayDone={desktopTodayDone}
+          onStartToday={() => {
+            desktopGoToToday()
+            updateState({ activeTab: 'quest' })
+          }}
+        />
+      )}
 
-        <div className="grid gap-5 lg:grid-cols-[13rem_minmax(0,1fr)_20rem] lg:items-start">
-          <aside className="grid gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-5">
-            <TabButton
-              active={state.activeTab === 'quest'}
-              icon={Compass}
-              label={c.quest}
-              onClick={() => updateState({ activeTab: 'quest' })}
-            />
-            <TabButton
-              active={state.activeTab === 'progress'}
-              icon={Gauge}
-              label={c.progress}
-              onClick={() => updateState({ activeTab: 'progress' })}
-            />
-            <TabButton
-              active={state.showToc}
-              icon={ListTree}
-              label={c.roadmap}
-              onClick={() => updateState({ showToc: !state.showToc, activeTab: 'quest' })}
-            />
-            <TabButton
-              active={state.activeTab === 'diary'}
-              icon={NotebookPen}
-              label={c.diary ?? copy.en.diary}
-              onClick={() => updateState({ activeTab: 'diary' })}
-            />
-          </aside>
+      {desktopTab === 'quest' && (
+        <DesktopQuest
+          c={c}
+          days={days}
+          tr={tr}
+          lang={lang}
+          weekLabel={desktopWeekLabel}
+          selectedDayId={selectedDay.id}
+          onSelectDay={(dayId) => updateState({ selectedDay: dayId })}
+          dayMissions={dayMissions}
+          dayCompleted={dayCompleted}
+          isRestDay={Boolean(selectedDay.rest)}
+          isDone={(missionId) =>
+            Boolean(state.completed[getMissionKey(state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)])
+          }
+          onToggle={toggleMission}
+          overlayFor={(missionId) =>
+            aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)
+          }
+          dateLabel={formatDate(getDayDate(state.selectedVersion, state.selectedWeek, selectedDay.id))}
+          weekPercent={desktopWeekPercent}
+          isCurrentWeek={homeModel.isCurrentWeek}
+          onGoToToday={desktopGoToToday}
+          memoTitle={memoTitle}
+          memoHint={memoHint}
+          memoPlaceholder={memoPlaceholder}
+          memoValue={state.memos[memoKey] ?? ''}
+          onMemoChange={setMemo}
+        />
+      )}
 
-          <div className="flex min-w-0 flex-col gap-5">
+      {desktopTab === 'progress' && (
+        <ProgressDashboard
+          curriculum={curriculum}
+          lang={lang}
+          totalMissionCount={totalMissionCount}
+          maxStatTotals={maxStatTotals}
+          completed={progressCompleted}
+          totalXp={progressXp}
+          activeLevel={progressActiveLevel}
+          nextLevel={progressNextLevel}
+          levelProgress={progressLevelProgress}
+          statTotals={progressStatTotals}
+          overallMissions={progressOverallMissions}
+          overallPercent={progressOverallPercent}
+          versionStats={progressVersionStats}
+          selectedVersion={state.selectedVersion}
+          selectedWeek={state.selectedWeek}
+          allUsersData={allUsersData}
+          progressUserId={progressUserId ?? currentUserId}
+          onSelectProgressUser={setProgressUserId}
+          onSelect={(versionKey, week) => {
+            updateState({ selectedVersion: versionKey, selectedWeek: week, selectedDay: 'mon', activeTab: 'quest' })
+          }}
+        />
+      )}
 
-        {state.profile && (state.profile.goals?.length || state.profile.duration || state.profile.dream) && (
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-lg font-black text-slate-950">
-                {(currentUser.name?.split('@')[0] || '회원')}님의 성장 여정
-              </p>
-              {state.profile.duration && (
-                <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-black text-white">
-                  {state.profile.duration} 플랜
-                </span>
-              )}
-            </div>
-            {state.profile.dream && (
-              <p className="mt-2 text-sm font-semibold italic leading-6 text-slate-600">“{state.profile.dream}”</p>
-            )}
-            {state.profile.goals?.length > 0 && (
-              <div className="mt-4">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">내 목표</p>
-                <div className="flex flex-wrap gap-2">
-                  {state.profile.goals.map((id) => (
-                    <span
-                      key={id}
-                      className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700"
-                    >
-                      {GOAL_LABEL_MAP[id] ?? id}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-        )}
+      {desktopTab === 'diary' && (
+        <DiaryDashboard
+          memos={state.memos}
+          selectedVersion={state.selectedVersion}
+          selectedWeek={state.selectedWeek}
+          diaryView={state.diaryView ?? 'week'}
+          lang={lang}
+          onChangeView={(diaryView) => updateState({ diaryView })}
+          onSelectWeek={(versionKey, week) => {
+            updateState({ selectedVersion: versionKey, selectedWeek: week, selectedDay: 'mon', activeTab: 'quest' })
+          }}
+        />
+      )}
 
-        {state.activeTab === 'quest' ? (
-          <>
-            {state.showToc && (
-              <CurriculumToc
-                curriculum={curriculum}
-                selectedVersion={state.selectedVersion}
-                selectedWeek={state.selectedWeek}
-                lang={lang}
-                isOpen={state.showToc}
-                onToggle={() => updateState({ showToc: !state.showToc })}
-                onSelectMonth={(item) =>
-                  updateState({
-                    selectedVersion: item.version,
-                    selectedWeek: item.startWeek,
-                    selectedDay: 'mon',
-                  })
-                }
-              />
-            )}
-
-        <section className="grid min-w-0 gap-4">
-          <section className="min-w-0 space-y-4">
-            {/* Was a 0.56fr/1fr split at full page width. Inside the 3-column shell that track
-                collapsed to ~284px and squeezed the three Stat tiles to ~73px, so it stacks now. */}
-            <div className="grid min-w-0 gap-4">
-              <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const prev = getPrevVersionWeek(state.selectedVersion, state.selectedWeek)
-                          if (prev) updateState({ selectedVersion: prev.version, selectedWeek: prev.week, selectedDay: 'mon' })
-                        }}
-                        disabled={!getPrevVersionWeek(state.selectedVersion, state.selectedWeek)}
-                        className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 text-slate-500 hover:border-slate-400 disabled:opacity-30"
-                      >‹</button>
-                      <p className="text-sm font-black text-emerald-600">
-                        {version.label} · Week {state.selectedWeek} ·{' '}
-                        {formatDateRange(getWeekStartDate(state.selectedVersion, state.selectedWeek), addDays(getWeekStartDate(state.selectedVersion, state.selectedWeek), 6))}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = getNextVersionWeek(state.selectedVersion, state.selectedWeek)
-                          if (next) updateState({ selectedVersion: next.version, selectedWeek: next.week, selectedDay: 'mon' })
-                        }}
-                        disabled={!getNextVersionWeek(state.selectedVersion, state.selectedWeek)}
-                        className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 text-slate-500 hover:border-slate-400 disabled:opacity-30"
-                      >›</button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const { version: v, week: w, dayId } = getTodayVersionWeekDay()
-                          updateState({ selectedVersion: v, selectedWeek: w, selectedDay: dayId })
-                        }}
-                        className="ml-1 inline-flex h-7 items-center rounded-md border border-emerald-300 bg-emerald-50 px-2 text-xs font-black text-emerald-700 hover:bg-emerald-100"
-                      >오늘</button>
-                    </div>
-                    <h2 className="mt-1 text-2xl font-black text-slate-950">{tr(version.weeks[state.selectedWeek - 1], lang)}</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{tr(version.theme, lang)}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={resetCurrentWeek}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-600 hover:border-slate-400"
-                    title={c.resetTitle}
-                  >
-                    <RotateCcw size={16} />
-                    {c.reset}
-                  </button>
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  <Stat label={c.weekComplete} value={`${weekCompleted}/${weeklyMissionCount}`} />
-                  <Stat label={c.selectedDay} value={selectedDay.rest ? c.rest : `${dayCompleted}/${dayMissions.length}`} />
-                  <Stat label={c.totalXp} value={`${totalXp}`} />
-                </div>
-              </div>
-
-              <FamilyScheduleVisibility
-                allUsersData={allUsersData}
-                selectedVersion={state.selectedVersion}
-                selectedWeek={state.selectedWeek}
-                selectedDayId={selectedDay.id}
-                lang={lang}
-                calendarNode={clientId ? (gToken ? (
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <CalendarDays size={13} className={calSyncing ? 'animate-pulse text-blue-400' : calSynced ? 'text-emerald-400' : 'text-slate-500'} />
-                    <span>{calSyncing ? '동기화 중...' : calSynced ? '동기화 완료' : '연결됨'}</span>
-                    {calSynced && <button type="button" onClick={() => { hasSyncedRef.current = false; syncCalendar(gToken, allUsersData, lang) }} className="font-black hover:text-white">재동기화</button>}
-                  </div>
-                ) : (
-                  <button type="button" onClick={connectGoogleCalendar} className="flex items-center gap-1 text-xs font-black text-slate-400 hover:text-blue-400">
-                    <CalendarDays size={13} />연결
-                  </button>
-                )) : null}
-              />
-            </div>
-
-            <div className="grid gap-4">
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-black text-slate-500">
-                      {tr(selectedDay.label, lang)} · {formatDate(getDayDate(state.selectedVersion, state.selectedWeek, selectedDay.id))} · {tr(selectedDay.title, lang)}
-                    </p>
-                    <h2 className="mt-1 text-2xl font-black text-slate-950">
-                      {selectedDay.rest ? c.todayRest : c.todayMissions}
-                    </h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{tr(selectedDayPlan, lang)}</p>
-                    {/* Q-A: Figma's `n / m 달성` row, derived from data that already exists. */}
-                    {!selectedDay.rest && (
-                      <p className="mt-2 text-sm font-black text-indigo-600">
-                        {c.achieved(dayCompleted, dayMissions.length)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <WeekPlannerCalendar
-                  c={c}
-                  days={days}
-                  lang={lang}
-                  schedule={currentWeekSchedule}
-                  completed={state.completed}
-                  selectedVersion={state.selectedVersion}
-                  selectedWeek={state.selectedWeek}
-                  selectedDayId={selectedDay.id}
-                  onSelectDay={(dayId) => updateState({ selectedDay: dayId })}
-                  onDropMission={moveMissionToDay}
-                />
-
-                {selectedDay.rest ? (
-                  <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
-                    <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-slate-900 text-white">
-                      <Moon size={28} />
-                    </div>
-                    <p className="mt-4 text-xl font-black text-slate-950">{c.saturdayNoMissions}</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">
-                      {c.restNote}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {dayMissions.map((mission, index) => {
-                      const completed = Boolean(
-                        state.completed[getMissionKey(state.selectedVersion, state.selectedWeek, selectedDay.id, mission.id)],
-                      )
-                      const Icon = mission.icon
-                      const overlay = aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, selectedDay.id, mission.id)
-                      return (
-                        <motion.button
-                          key={`${selectedDay.id}-${mission.id}`}
-                          type="button"
-                          initial={{ opacity: 0, y: 12 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.03 }}
-                          onClick={() => toggleMission(mission.id)}
-                          className={`rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
-                            completed ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className={`grid h-11 w-11 place-items-center rounded-lg border ${mission.tone}`}>
-                              <Icon size={22} />
-                            </div>
-                            <CheckCircle2 className={completed ? 'text-emerald-500' : 'text-slate-300'} size={24} />
-                          </div>
-                          <p className="mt-4 text-lg font-black text-slate-950">{tr(mission.ko, lang)}</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-500">{mission.name}</p>
-                          {/* Q-A: per-card status label from Figma. Interaction is unchanged. */}
-                          <p className={`mt-1 text-xs font-black ${completed ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {completed ? c.doneLabel : c.notStarted}
-                          </p>
-                          <p className="mt-3 min-h-10 text-sm leading-5 text-slate-500">
-                            {overlay ? tr({ ko: overlay.objectiveKo, en: overlay.objectiveEn }, lang) : tr(mission.detail, lang)}
-                          </p>
-                          {overlay?.title && (
-                            <p className="mt-2 text-xs font-semibold text-slate-400">
-                              {overlay.title}
-                              {overlay.unitLabel ? ` · ${overlay.unitLabel}` : ''}
-                            </p>
-                          )}
-                          <div className="mt-4 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-black text-slate-700">
-                            +{mission.xp} XP
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {Object.entries(mission.statRewards ?? {}).map(([statId, points]) => (
-                              <span key={statId} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-500">
-                                {tr(statMap[statId]?.label, lang)} +{points}
-                              </span>
-                            ))}
-                          </div>
-                        </motion.button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-lg bg-indigo-50 text-indigo-700">
-                  <NotebookPen size={21} />
-                </div>
-                <div>
-                  <h2 className="text-lg font-black text-slate-950">{memoTitle}</h2>
-                  <p className="text-sm text-slate-500">{memoHint}</p>
-                </div>
-              </div>
-              <textarea
-                value={state.memos[memoKey] ?? ''}
-                onChange={(event) => setMemo(event.target.value)}
-                className="mt-4 min-h-36 w-full resize-y rounded-lg border border-slate-200 bg-slate-50 p-4 text-base leading-7 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
-                placeholder={memoPlaceholder}
-              />
-            </div>
-          </section>
-        </section>
-          </>
-        ) : state.activeTab === 'diary' ? (
-          <DiaryDashboard
-            memos={state.memos}
-            selectedVersion={state.selectedVersion}
-            selectedWeek={state.selectedWeek}
-            diaryView={state.diaryView ?? 'week'}
-            lang={lang}
-            onChangeView={(diaryView) => updateState({ diaryView })}
-            onSelectWeek={(versionKey, week) =>
-              updateState({
-                activeTab: 'quest',
-                selectedVersion: versionKey,
-                selectedWeek: week,
-                selectedDay: 'mon',
-              })
-            }
-          />
-        ) : (
-          <ProgressDashboard
-            curriculum={curriculum}
-            completed={state.completed}
-            totalXp={totalXp}
-            activeLevel={activeLevel}
-            nextLevel={nextLevel}
-            levelProgress={levelProgress}
-            lang={lang}
-            statTotals={statTotals}
-            overallMissions={overallMissions}
-            totalMissionCount={totalMissionCount}
-            overallPercent={overallPercent}
-            completed={progressCompleted}
-            totalXp={progressXp}
-            activeLevel={progressActiveLevel}
-            nextLevel={progressNextLevel}
-            levelProgress={progressLevelProgress}
-            statTotals={progressStatTotals}
-            overallMissions={progressOverallMissions}
-            overallPercent={progressOverallPercent}
-            versionStats={progressVersionStats}
-            selectedVersion={state.selectedVersion}
-            selectedWeek={state.selectedWeek}
-            allUsersData={allUsersData}
-            maxStatTotals={maxStatTotals}
-            progressUserId={progressUserId ?? currentUserId}
-            onSelectProgressUser={setProgressUserId}
-            onSelect={(versionKey, week) =>
-              updateState({
-                activeTab: 'quest',
-                selectedVersion: versionKey,
-                selectedWeek: week,
-                selectedDay: 'mon',
-              })
-            }
-          />
-        )}
-          </div>
-
-          <aside className="flex min-w-0 flex-col gap-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-500">{c.currentLevel}</p>
-                  <p className="mt-1 text-xl font-black text-slate-950">{tr(activeLevel.name, lang)}</p>
-                </div>
-                <div className="grid h-12 w-12 place-items-center rounded-lg bg-slate-950 text-white">
-                  <Trophy size={24} />
-                </div>
-              </div>
-              <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${levelProgress}%` }} />
-              </div>
-              <div className="mt-2 flex justify-between text-sm text-slate-500">
-                <span>{totalXp} XP</span>
-                <span>{nextLevel ? c.untilXp(nextLevel.min, levelProgress) : c.highestLevel}</span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">이번 주 획득 스탯</p>
-              <div className="grid gap-2">
-                {characterStats.map((stat) => {
-                  const weekPts = weeklyStatTotals[stat.id] ?? 0
-                  const pct = Math.min(100, Math.round((weekPts / 50) * 100))
-                  return (
-                    <div key={stat.id} className="flex items-center gap-2">
-                      <span className="w-14 shrink-0 text-xs font-black text-slate-500">{tr(stat.label, lang)}</span>
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                        <div className={`h-full rounded-full bg-gradient-to-r ${stat.color} transition-all`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="w-6 shrink-0 text-right text-xs font-black text-slate-400">{weekPts}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <StatRadar lang={lang} c={c} statTotals={statTotals} maxStatTotals={maxStatTotals} overallPower={overallPower} />
-
-            <CharacterStatus c={c} lang={lang} statTotals={statTotals} compact />
-
-            {state.activeTab === 'quest' && (
-              <ActivityPool
-                c={c}
-                lang={lang}
-                requiredCounts={requiredCounts}
-                scheduledCounts={scheduledCounts}
-                onQuickAdd={(missionId) => moveMissionToDay({ missionId, sourceDayId: 'pool', targetDayId: selectedDay.id })}
-                canLoadPrevious={Boolean(previousWeekRef)}
-                onLoadPreviousWeek={loadPreviousWeekPlan}
-                onResetPlan={resetCurrentPlan}
-              />
-            )}
-          </aside>
-        </div>
-
-        {aiPortal}
-      </section>
-    </main>
+      {aiPortal}
+    </DesktopShell>
   )
 }
 
