@@ -1345,7 +1345,9 @@ export default function App() {
     if (aiStatus !== 'pending' || !currentUserId) return
     let cancelled = false
     let timer
-    const deadline = Date.now() + 180000 // worker model timeout is 120s + poll slack
+    // The MVP may run without an AI worker. Do not leave a user watching a pending
+    // state for minutes: the default plan is already usable, so fail non-blockingly.
+    const deadline = Date.now() + 30000
     const version = state.selectedVersion
     const week = state.selectedWeek // overlay the week the user is actually on (not hardcoded 1)
     const poll = async () => {
