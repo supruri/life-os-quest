@@ -19,7 +19,7 @@ export default function AiStatusChip({ variant, onRetry }) {
   } else if (variant === 'chip-error') {
     body = (
       <div className="pointer-events-auto inline-flex flex-wrap items-center justify-center gap-3 rounded-full border border-border bg-surface px-4 py-2 text-sm text-text" role="alert">
-        개인화에 실패했어요. 기본 플랜으로 진행합니다.
+        AI 맞춤 플랜은 아직 준비 중이에요. 기본 플랜으로 계속할게요.
         <button type="button" onClick={onRetry} className="rounded-full bg-accent px-3 py-1 font-black text-on-accent">
           다시 시도
         </button>
