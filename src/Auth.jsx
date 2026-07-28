@@ -78,6 +78,28 @@ export default function Auth() {
           ))}
         </div>
 
+        {/* Firebase is a clean signup boundary: accounts from the Supabase-era build were not
+            carried over (passwords cannot be moved between identity providers). Without this the
+            only feedback a returning user gets is "wrong password", which sends them to reset a
+            password for an account that does not exist here. */}
+        {mode === 'login' && (
+          <p className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold leading-relaxed text-slate-500">
+            이전 버전에서 쓰던 계정은 이어지지 않아요. 처음이시라면{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signup')
+                setError('')
+                setInfo('')
+              }}
+              className="font-black text-indigo-600 underline underline-offset-2"
+            >
+              회원가입
+            </button>
+            으로 새 계정을 만들어 주세요.
+          </p>
+        )}
+
         <form onSubmit={submit} className="grid gap-3">
           <div>
             <label className="mb-1.5 block text-sm font-black text-slate-700">이메일</label>

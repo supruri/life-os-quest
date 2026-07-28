@@ -8,10 +8,16 @@ import { translateAuthError } from '../src/firebase/authErrors.js'
 const FALLBACK = '문제가 발생했어요. 다시 시도해 주세요.'
 
 test('wrong credentials map to one message across the modern and legacy codes', () => {
-  const expected = '이메일 또는 비밀번호가 올바르지 않아요.'
+  const expected = '이메일 또는 비밀번호가 올바르지 않아요. 처음이시라면 회원가입을 먼저 해주세요.'
   assert.equal(translateAuthError({ code: 'auth/invalid-credential' }), expected)
   assert.equal(translateAuthError({ code: 'auth/wrong-password' }), expected)
   assert.equal(translateAuthError({ code: 'auth/user-not-found' }), expected)
+})
+
+test('the failed-login message points at signup, since old accounts were not carried over', () => {
+  // Firebase collapses "no such account" into auth/invalid-credential, and after the clean-boundary
+  // decision that is the likeliest cause — the copy must not send those users to a password reset.
+  assert.match(translateAuthError({ code: 'auth/invalid-credential' }), /회원가입/)
 })
 
 test('a duplicate signup points the user at logging in', () => {
