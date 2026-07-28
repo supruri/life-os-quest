@@ -6,10 +6,13 @@
 
 const MESSAGES = {
   // Modern Firebase collapses wrong-password / unknown-account into one code when email
-  // enumeration protection is on. The legacy pair is mapped too, for projects with it off.
-  'auth/invalid-credential': '이메일 또는 비밀번호가 올바르지 않아요.',
-  'auth/wrong-password': '이메일 또는 비밀번호가 올바르지 않아요.',
-  'auth/user-not-found': '이메일 또는 비밀번호가 올바르지 않아요.',
+  // enumeration protection is on, so this one string has to serve both. Since accounts from the
+  // previous build were not carried over, "no such account" is the likelier case for now — hence
+  // the nudge to sign up, which would otherwise leave returning users resetting a password for an
+  // account that does not exist. The legacy pair is mapped too, for projects with protection off.
+  'auth/invalid-credential': '이메일 또는 비밀번호가 올바르지 않아요. 처음이시라면 회원가입을 먼저 해주세요.',
+  'auth/wrong-password': '이메일 또는 비밀번호가 올바르지 않아요. 처음이시라면 회원가입을 먼저 해주세요.',
+  'auth/user-not-found': '이메일 또는 비밀번호가 올바르지 않아요. 처음이시라면 회원가입을 먼저 해주세요.',
   'auth/invalid-email': '이메일 형식이 올바르지 않아요.',
   'auth/user-disabled': '사용이 중지된 계정이에요.',
   'auth/email-already-in-use': '이미 가입된 이메일이에요. 로그인해 주세요.',
