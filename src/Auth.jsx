@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Sparkles } from 'lucide-react'
-import { signIn, signUp } from './supabase.js'
+import { signIn, signUp } from './firebase/index.js'
+import { translateAuthError } from './firebase/authErrors.js'
 
 export default function Auth() {
   const [mode, setMode] = useState('login') // 'login' | 'signup'
@@ -22,9 +23,11 @@ export default function Auth() {
     try {
       if (mode === 'signup') {
         const data = await signUp(email.trim(), password)
-        // If email confirmation is on, there is no active session yet.
+        // Firebase signs a new account in immediately, so a session is expected here. Kept as a
+        // guard rather than an assumption: if sign-in verification is ever enforced, this is the
+        // branch that tells the user instead of leaving them on a silent, unchanged screen.
         if (!data.session) {
-          setInfo('가입 완료! 이메일 인증이 켜져 있으면 메일을 확인해 주세요. 아니면 로그인하세요.')
+          setInfo('가입 완료! 이메일 인증이 필요하면 메일을 확인한 뒤 로그인해 주세요.')
           setMode('login')
         }
       } else {
@@ -32,7 +35,7 @@ export default function Auth() {
       }
       // On success, App's auth listener swaps the screen automatically.
     } catch (err) {
-      setError(translateError(err?.message))
+      setError(translateAuthError(err))
     } finally {
       setBusy(false)
     }
@@ -113,12 +116,4 @@ export default function Auth() {
       </div>
     </main>
   )
-}
-
-function translateError(msg) {
-  if (!msg) return '문제가 발생했어요. 다시 시도해 주세요.'
-  if (/Invalid login credentials/i.test(msg)) return '이메일 또는 비밀번호가 올바르지 않아요.'
-  if (/already registered|already exists/i.test(msg)) return '이미 가입된 이메일이에요. 로그인해 주세요.'
-  if (/Email not confirmed/i.test(msg)) return '이메일 인증이 필요해요. 메일함을 확인해 주세요.'
-  return msg
 }

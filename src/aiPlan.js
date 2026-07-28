@@ -1,5 +1,5 @@
 // Pure domain logic for the AI personalization overlay (Plan B-2).
-// No React / Supabase / weeklyMissionPlans imports — the caller passes the default
+// No React / Firebase / weeklyMissionPlans imports — the caller passes the default
 // week schedule in, so this module stays unit-testable with node:test.
 
 const READING_CATEGORIES = ['reading', 'video'] // video folds into the reading slots
