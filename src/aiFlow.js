@@ -1,6 +1,6 @@
 // src/aiFlow.js
 // Pure presentation-surface derivation for the AI personalization flow (SP3).
-// No React / Supabase imports — unit-testable with node:test, same convention as aiPlan.js.
+// No React / Firebase imports — unit-testable with node:test, same convention as aiPlan.js.
 
 // surface: 'cover' | 'chip-pending' | 'chip-error' | 'sheet' | 'none'
 export function deriveAiSurface({ aiStatus, genPhase, revealDismissed, hasGoalSummary }) {

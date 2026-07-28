@@ -1,5 +1,5 @@
 // DEV-ONLY plan preview. `?preview=<name>` renders the real UI with a generated
-// ai_plans result fixture from public/previews/<name>.json, bypassing auth/supabase.
+// ai_plans result fixture from public/previews/<name>.json, bypassing Firebase auth/Firestore.
 // Every seam is guarded by import.meta.env.DEV, so this is dead code in production builds.
 
 function params() {

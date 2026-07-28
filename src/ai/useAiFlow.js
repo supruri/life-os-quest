@@ -1,6 +1,6 @@
 // src/ai/useAiFlow.js
 import { useEffect, useRef, useState } from 'react'
-import { fetchAiPlan } from '../supabase.js'
+import { fetchAiPlan } from '../firebase/index.js'
 import { deriveAiSurface, deriveRehydrateAction } from '../aiFlow.js'
 
 export const AI_COVER_MIN_MS = 1200      // anti-flash floor for the cover

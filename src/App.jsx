@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { supabase, fetchUserState, upsertUserState, getSession, onAuthChange, signOut, requestAiPlan, fetchAiPlan } from './supabase.js'
+import { isFirebaseConfigured, fetchUserState, upsertUserState, getSession, onAuthChange, signOut, requestAiPlan, fetchAiPlan } from './firebase/index.js'
 import Onboarding, { GOAL_OPTIONS } from './Onboarding.jsx'
 import { mapProfileToRequest, isPersonalizable, buildAiOverlay, aiSlotFor } from './aiPlan.js'
 import { DEFAULT_LANG, resolveLang } from './lang.js'
@@ -1026,6 +1026,7 @@ export default function App() {
   const [aiError, setAiError] = useState(null)
   const [enqueueSeq, setEnqueueSeq] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false) // remote state unreadable -> autosave fence
   const [allUsersData, setAllUsersData] = useState(null)
   const [progressUserId, setProgressUserId] = useState(null)
   const [gToken, setGToken] = useState(null)
@@ -1126,6 +1127,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUserId) return
     setIsLoading(true)
+    setLoadFailed(false)
     fetchUserState(currentUserId)
       .then((remoteState) => {
         const today = getTodayVersionWeekDay()
@@ -1139,18 +1141,27 @@ export default function App() {
         }
       })
       .catch(() => {
+        // Could not READ the remote blob (offline, or it failed to parse). Fall back to local state
+        // for this session, but mark the load failed so the autosave below cannot replace a document
+        // we never managed to see — see loadFailed.
+        setLoadFailed(true)
         setState({ ...loadState(currentUserId), ...getTodayVersionWeekDay() })
       })
       .finally(() => setIsLoading(false))
   }, [currentUserId])
 
+  // Autosave. `loadFailed` is a write fence, not a nicety: upsertUserState replaces the whole
+  // document, so saving on top of a failed read would overwrite the user's real history with
+  // whatever local/default state we fell back to. Skipping the write costs this session's edits;
+  // performing it would cost every session before it. Re-reads (and re-enables saving) on reload.
   useEffect(() => {
-    if (isLoading || !currentUserId) return
+    if (isLoading || !currentUserId || loadFailed) return
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       upsertUserState(currentUserId, state).catch(console.error)
     }, 1000)
-  }, [currentUserId, state, isLoading])
+    return () => clearTimeout(saveTimerRef.current)
+  }, [currentUserId, state, isLoading, loadFailed])
 
   useEffect(() => {
     document.documentElement.lang = lang === 'ko' ? 'ko' : 'en'
@@ -1304,10 +1315,10 @@ export default function App() {
 
   const updateState = (patch) => setState((current) => ({ ...current, ...patch }))
 
-  // --- B-2: AI personalization (Supabase ai_plans queue, poll-based) ---
+  // --- B-2: AI personalization (Firestore ai_plans queue, poll-based) ---
   const enqueueAiPlan = useCallback(
     (profile) => {
-      if (!supabase || !currentUserId || !isPersonalizable(profile)) return
+      if (!isFirebaseConfigured || !currentUserId || !isPersonalizable(profile)) return
       setAiError(null)
       requestAiPlan(currentUserId, mapProfileToRequest(profile))
         .then(() => { setEnqueueSeq((n) => n + 1); setAiStatus('pending') }) // set pending only after the row is written (race-free)
