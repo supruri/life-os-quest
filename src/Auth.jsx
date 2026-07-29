@@ -1,7 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Sparkles } from 'lucide-react'
-import { signIn, signUp } from './firebase/index.js'
+import { consumeRedirectResult, isUserCancelledAuth, signIn, signInWithGoogle, signUp } from './firebase/index.js'
 import { translateAuthError } from './firebase/authErrors.js'
+
+// Google's mark, inlined rather than fetched: the CSP on the deployed site blocks external images,
+// and a sign-in button that renders without its logo looks broken.
+function GoogleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24s.92 7.54 2.56 10.78l7.97-6.19z" />
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+    </svg>
+  )
+}
 
 export default function Auth() {
   const [mode, setMode] = useState('login') // 'login' | 'signup'
@@ -10,6 +23,38 @@ export default function Auth() {
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
   const [busy, setBusy] = useState(false)
+  const [providerBusy, setProviderBusy] = useState(false)
+
+  // The redirect leg finishes here. onAuthStateChanged already restores the session, so this
+  // exists only to surface an error (unauthorised domain, account collision) that would otherwise
+  // disappear when the browser navigated away and back.
+  useEffect(() => {
+    let active = true
+    consumeRedirectResult().catch((err) => {
+      if (!active || isUserCancelledAuth(err)) return
+      setError(translateAuthError(err))
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const startGoogle = async () => {
+    setError('')
+    setInfo('')
+    setProviderBusy(true)
+    try {
+      const result = await signInWithGoogle()
+      // On the redirect path the browser is navigating away; keep the button disabled rather than
+      // flashing it back to idle mid-navigation.
+      if (result?.redirecting) return
+    } catch (err) {
+      // A user who closes the popup made a choice; that is not an error to shout about.
+      if (!isUserCancelledAuth(err)) setError(translateAuthError(err))
+    } finally {
+      setProviderBusy(false)
+    }
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -99,6 +144,24 @@ export default function Auth() {
             으로 새 계정을 만들어 주세요.
           </p>
         )}
+
+        {/* Provider sign-in sits above the form: it is the faster path, and email/password stays
+            untouched below it for anyone who prefers it. */}
+        <button
+          type="button"
+          onClick={startGoogle}
+          disabled={providerBusy || busy}
+          className="mb-4 inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-700 transition hover:bg-slate-50 disabled:text-slate-400"
+        >
+          <GoogleMark />
+          {providerBusy ? '연결 중…' : 'Google로 계속하기'}
+        </button>
+
+        <div className="mb-4 flex items-center gap-3">
+          <span className="h-px flex-1 bg-slate-200" />
+          <span className="text-xs font-bold text-slate-400">또는 이메일로</span>
+          <span className="h-px flex-1 bg-slate-200" />
+        </div>
 
         <form onSubmit={submit} className="grid gap-3">
           <div>

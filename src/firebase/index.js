@@ -4,9 +4,13 @@
 export { isFirebaseConfigured, missingConfigKeys } from './app.js'
 export {
   FirebaseNotConfiguredError,
+  consumeRedirectResult,
   getSession,
+  isUserCancelledAuth,
   onAuthChange,
+  prefersRedirect,
   signIn,
+  signInWithGoogle,
   signOut,
   signUp,
 } from './auth.js'
