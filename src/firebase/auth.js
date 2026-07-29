@@ -5,15 +5,22 @@
 // real UI with no sign-in at all.
 
 import {
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
 } from 'firebase/auth'
 
 import { auth } from './app.js'
 import { toSession } from './docShape.js'
+import { POPUP_FALLBACK_CODES, REDIRECTING, isUserCancelledAuth, prefersRedirect } from './providerFlow.js'
 import { isPreview, PREVIEW_SESSION } from '../previewMode.js'
+
+export { isUserCancelledAuth, prefersRedirect } from './providerFlow.js'
 
 // App gates its whole render on getSession() settling (`authReady`). onAuthStateChanged delivers
 // its first callback off an internal initialisation promise, and if that promise rejects neither
@@ -46,6 +53,44 @@ export async function signIn(email, password) {
 export async function signOut() {
   if (!auth) return
   await firebaseSignOut(auth)
+}
+
+// --- Google ---------------------------------------------------------------------------------
+
+export async function signInWithGoogle() {
+  if (!auth) throw new FirebaseNotConfiguredError()
+  const provider = new GoogleAuthProvider()
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+
+  if (prefersRedirect(ua)) {
+    await signInWithRedirect(auth, provider)
+    return REDIRECTING
+  }
+
+  try {
+    const credential = await signInWithPopup(auth, provider)
+    return { session: toSession(credential.user), redirecting: false }
+  } catch (error) {
+    // A blocked or environmentally-unsupported popup is not a failure the user can act on —
+    // fall through to redirect rather than showing them an error they cannot fix.
+    if (POPUP_FALLBACK_CODES.has(error?.code)) {
+      await signInWithRedirect(auth, provider)
+      return REDIRECTING
+    }
+    throw error
+  }
+}
+
+/**
+ * Completes a redirect sign-in after the browser comes back.
+ *
+ * onAuthStateChanged already restores the session, so this exists to surface an *error* from the
+ * redirect leg (unauthorized domain, account collision) that would otherwise vanish silently.
+ */
+export async function consumeRedirectResult() {
+  if (!auth || isPreview()) return null
+  const result = await getRedirectResult(auth)
+  return result ? toSession(result.user) : null
 }
 
 /**

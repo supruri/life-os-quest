@@ -22,6 +22,14 @@ const MESSAGES = {
   // Surfaced when Email/Password sign-in has not been enabled in the Firebase console — a setup
   // mistake, not a user mistake, so it says so instead of blaming the credentials.
   'auth/operation-not-allowed': '이메일 로그인이 아직 활성화되지 않았어요. 관리자에게 문의해 주세요.',
+  // --- provider (Google / Apple) sign-in ---
+  // Same email already registered another way. Tell the user which way, not "unknown error".
+  'auth/account-exists-with-different-credential':
+    '이 이메일은 다른 방법으로 이미 가입되어 있어요. 기존 방법으로 로그인해 주세요.',
+  // The serving domain is not in Firebase Auth's authorised list — a setup mistake, not a user one.
+  'auth/unauthorized-domain': '이 주소에서는 소셜 로그인을 사용할 수 없어요. 관리자에게 문의해 주세요.',
+  'auth/popup-blocked': '팝업이 차단되어 있어요. 차단을 해제하거나 다시 시도해 주세요.',
+  'auth/credential-already-in-use': '이미 다른 계정에 연결된 로그인이에요.',
 }
 
 const FALLBACK = '문제가 발생했어요. 다시 시도해 주세요.'
