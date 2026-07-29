@@ -50,6 +50,38 @@ export function detectsRunningGoal(profile) {
   return typeof profile.dream === 'string' && RUN_INTENT.test(profile.dream)
 }
 
+/** The programme a running user starts on when nothing more specific is known. */
+export const DEFAULT_RUN_PROGRAM = 'c25k'
+
+/**
+ * Natural-language target distance in km, or null when the user never stated one.
+ *
+ * Kept because it is free signal that costs no UI, but it is deliberately NOT a gate: a running
+ * user who never mentions a distance still gets a programme. There is no distance-choice screen
+ * and none is needed.
+ */
+export function parseTargetDistanceKm(profile) {
+  if (!profile || typeof profile !== 'object') return null
+  const goals = Array.isArray(profile.goals) ? profile.goals : []
+  const text = [profile.dream, ...goals].filter((part) => typeof part === 'string').join(' ')
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(?:km|k\b|킬로미터|킬로|킬)/i)
+  return match ? Number(match[1]) : null
+}
+
+/**
+ * Which running programme this profile starts on, or null when the user is not on the running
+ * path at all (in which case nothing about their plan changes).
+ *
+ * The product decision this encodes: a missing distance DEFAULTS, it does not block. C25K is the
+ * beginner on-ramp, so it is also the right starting point for someone aiming beyond 5K — a 10K
+ * goal begins by being able to run 5K. When a second programme is actually implemented, this is
+ * the single function that has to learn to choose between them.
+ */
+export function resolveRunProgram(profile) {
+  if (!detectsRunningGoal(profile)) return null
+  return DEFAULT_RUN_PROGRAM
+}
+
 /**
  * Build the fallback overlay, or null when the profile is not a running goal (caller then leaves
  * the generic plan completely untouched).
@@ -62,7 +94,9 @@ export function detectsRunningGoal(profile) {
  * construction and no mission can exceed its allowance.
  */
 export function buildC25kFallbackOverlay({ profile, version, week, defaultWeekSchedule }) {
-  if (!detectsRunningGoal(profile)) return null
+  // Routed through resolveRunProgram so "which programme" is one decision in one place, and so a
+  // running user is never turned away for not having named a distance.
+  if (resolveRunProgram(profile) !== DEFAULT_RUN_PROGRAM) return null
   if (!defaultWeekSchedule) return null
 
   const workoutDays = slotsFor(defaultWeekSchedule, 'workout')

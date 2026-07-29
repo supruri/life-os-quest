@@ -9,8 +9,11 @@ import assert from 'node:assert/strict'
 import {
   C25K_SESSIONS_PER_WEEK,
   C25K_WEEK1_SLOT,
+  DEFAULT_RUN_PROGRAM,
   buildC25kFallbackOverlay,
   detectsRunningGoal,
+  parseTargetDistanceKm,
+  resolveRunProgram,
 } from '../src/c25kFallback.js'
 import { aiSlotFor } from '../src/aiPlan.js'
 import { deriveRunGuide } from '../src/runGuide.js'
@@ -53,6 +56,41 @@ test('detection is safe on absent or malformed profiles', () => {
   for (const bad of [null, undefined, {}, { goals: null }, { dream: 42 }, 'nope']) {
     assert.equal(detectsRunningGoal(bad), false)
   }
+})
+
+// --- distance is signal, never a gate -----------------------------------------------------------
+
+test('a stated distance is still read from natural language', () => {
+  assert.equal(parseTargetDistanceKm({ dream: '3개월 후에 5km 완주하고 싶어요' }), 5)
+  assert.equal(parseTargetDistanceKm({ dream: '10K 대회 목표' }), 10)
+  assert.equal(parseTargetDistanceKm({ dream: '21.1킬로 하프' }), 21.1)
+  assert.equal(parseTargetDistanceKm({ goals: ['5km 달리기'] }), 5)
+})
+
+test('no stated distance is null, not an error', () => {
+  assert.equal(parseTargetDistanceKm({ sport: 'running', dream: '꾸준히 달리고 싶어요' }), null)
+  assert.equal(parseTargetDistanceKm({}), null)
+  assert.equal(parseTargetDistanceKm(null), null)
+})
+
+test('a running user with NO distance still gets a programme — the default, not a block', () => {
+  // The product decision: absence of a distance must never deny access to the guide.
+  assert.equal(resolveRunProgram({ sport: 'running' }), DEFAULT_RUN_PROGRAM)
+  assert.equal(resolveRunProgram({ sport: 'running', dream: '건강해지고 싶어요' }), DEFAULT_RUN_PROGRAM)
+  const overlay = build({ sport: 'running', dream: '건강해지고 싶어요' })
+  assert.ok(overlay, 'a distance-less running profile must still receive c25k')
+  assert.equal(overlay.slots['mon|workout'].resourceRef, 'run:c25k')
+})
+
+test('a beyond-5K goal still starts on c25k rather than being turned away', () => {
+  // C25K is the on-ramp; a 10K goal begins by being able to run 5K.
+  assert.equal(resolveRunProgram({ sport: 'running', dream: '10km 완주' }), DEFAULT_RUN_PROGRAM)
+})
+
+test('resolveRunProgram returns null for non-running profiles, changing nothing for them', () => {
+  assert.equal(resolveRunProgram({ goals: ['exercise'] }), null)
+  assert.equal(resolveRunProgram({ goals: ['exercise'], dream: '벤치프레스 100kg' }), null)
+  assert.equal(resolveRunProgram(null), null)
 })
 
 // --- overlay construction -----------------------------------------------------------------------
