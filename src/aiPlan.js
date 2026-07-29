@@ -91,6 +91,9 @@ export function buildAiOverlay(result, version, week, defaultWeekSchedule) {
         subtitle: q.subtitle ?? null,
         unitLabel: q.unitLabel ?? null,
         resourceRef: q.resourceRef ?? null,
+        // Carried through for the running-session guide, which reports the session length rather
+        // than estimating one. Null when the plan omits it — the guide then shows no total.
+        estimatedMinutes: Number.isFinite(q.estimatedMinutes) ? q.estimatedMinutes : null,
       }
       schedule[day] = [...(schedule[day] ?? []), missionId]
     }
