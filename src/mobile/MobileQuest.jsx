@@ -19,6 +19,7 @@ export default function MobileQuest({
   dayCompleted,
   onOpenProgress,
   overlayFor,
+  hasGuide,
   isRestDay,
   isCurrentWeek,
   onGoToToday,
@@ -90,12 +91,16 @@ export default function MobileQuest({
         dayMissions.map((mission) => {
           const done = isDone(mission.id)
           const overlay = overlayFor?.(mission.id)
+          // Mirrors desktop: a guided (running) card opens a dialog, so it must not advertise
+          // toggle semantics to assistive tech.
+          const guided = Boolean(hasGuide?.(mission.id))
           return (
             <button
               key={mission.id}
               type="button"
               onClick={() => onToggle(mission.id)}
-              aria-pressed={done}
+              aria-haspopup={guided ? 'dialog' : undefined}
+              aria-pressed={guided ? undefined : done}
               className={`w-full rounded-2xl border p-3.5 text-left transition ${
                 done ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'
               }`}
@@ -104,6 +109,11 @@ export default function MobileQuest({
                 <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10.5px] font-black text-indigo-600">
                   {tr(mission.ko, lang)}
                 </span>
+                {guided && (
+                  <span className="rounded-md border border-indigo-200 px-2 py-0.5 text-[10.5px] font-black text-indigo-600">
+                    {c.runGuideBadge}
+                  </span>
+                )}
                 <span className="ml-auto">
                   {done ? (
                     <CheckCircle2 size={18} className="text-emerald-600" aria-hidden="true" />

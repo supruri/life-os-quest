@@ -22,6 +22,7 @@ export default function DesktopQuest({
   weekPercent,
   dayCompleted,
   overlayFor,
+  hasGuide,
   isRestDay,
   isCurrentWeek,
   onGoToToday,
@@ -102,12 +103,17 @@ export default function DesktopQuest({
               {dayMissions.map((mission) => {
                 const done = isDone(mission.id)
                 const overlay = overlayFor?.(mission.id)
+                // A running mission opens the session guide rather than toggling, so it must not
+                // claim toggle semantics: aria-pressed would tell a screen reader this is a
+                // two-state control when activating it actually opens a dialog.
+                const guided = Boolean(hasGuide?.(mission.id))
                 return (
                   <button
                     key={mission.id}
                     type="button"
                     onClick={() => onToggle(mission.id)}
-                    aria-pressed={done}
+                    aria-haspopup={guided ? 'dialog' : undefined}
+                    aria-pressed={guided ? undefined : done}
                     className={`flex h-full w-full flex-col rounded-2xl border p-5 text-left transition ${
                       done
                         ? 'border-emerald-300 bg-emerald-50'
@@ -118,6 +124,11 @@ export default function DesktopQuest({
                       <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-black text-indigo-600">
                         {tr(mission.ko, lang)}
                       </span>
+                      {guided && (
+                        <span className="rounded-md border border-indigo-200 px-2 py-0.5 text-xs font-black text-indigo-600">
+                          {c.runGuideBadge}
+                        </span>
+                      )}
                       <span className="ml-auto">
                         {done ? (
                           <CheckCircle2 size={20} className="text-emerald-600" aria-hidden="true" />

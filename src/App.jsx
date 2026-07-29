@@ -16,6 +16,8 @@ import { buildWeekTrail, weekProgress, todayKey } from './runningTrail.js'
 import MobileHome from './mobile/MobileHome.jsx'
 import MobileQuest from './mobile/MobileQuest.jsx'
 import BottomNav from './mobile/BottomNav.jsx'
+import RunSessionGuide from './RunSessionGuide.jsx'
+import { deriveRunGuide, isRunSession, pickRunSession } from './runGuide.js'
 import DesktopShell from './desktop/DesktopShell.jsx'
 import DesktopHome from './desktop/DesktopHome.jsx'
 import DesktopQuest from './desktop/DesktopQuest.jsx'
@@ -1030,6 +1032,9 @@ export default function App() {
   const [enqueueSeq, setEnqueueSeq] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false) // remote state unreadable -> autosave fence
+  // Open running-session guide, as { dayId, missionId }. Held by day+mission rather than by a
+  // derived guide object so it stays correct if the plan or the selected week changes underneath.
+  const [runGuideTarget, setRunGuideTarget] = useState(null)
   const [allUsersData, setAllUsersData] = useState(null)
   const [progressUserId, setProgressUserId] = useState(null)
   const [gToken, setGToken] = useState(null)
@@ -1440,6 +1445,56 @@ export default function App() {
     }))
   }
 
+  // --- Running-session guide ---------------------------------------------------------------
+  // A run mission opens a guide instead of toggling straight to done: the session has structure
+  // (warm-up / intervals / cool-down) and a safety caveat that a checkbox cannot carry. Every
+  // other mission keeps its existing one-tap toggle — deriveRunGuide returns null for them.
+  const runGuideDataFor = useCallback(
+    (dayId, missionId) =>
+      deriveRunGuide(aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, dayId, missionId)),
+    [state.aiPlan, state.selectedVersion, state.selectedWeek],
+  )
+
+  const isRunMission = useCallback(
+    (dayId, missionId) =>
+      isRunSession(
+        aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, dayId, missionId)?.resourceRef,
+      ),
+    [state.aiPlan, state.selectedVersion, state.selectedWeek],
+  )
+
+  // Single entry point for activating a mission card, so desktop and mobile cannot diverge.
+  const selectMission = useCallback(
+    (missionId, dayId = selectedDay.id) => {
+      if (isRunMission(dayId, missionId)) {
+        setRunGuideTarget({ dayId, missionId })
+        return
+      }
+      toggleMission(missionId)
+    },
+    // toggleMission is redefined each render; it only closes over state setters, so this is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isRunMission, selectedDay.id],
+  )
+
+  const toggleMissionOnDay = (dayId, missionId) => {
+    if (days.find((d) => d.id === dayId)?.rest) return
+    const key = getMissionKey(state.selectedVersion, state.selectedWeek, dayId, missionId)
+    setState((current) => ({
+      ...current,
+      completed: { ...current.completed, [key]: !current.completed[key] },
+    }))
+  }
+
+  const runGuide = runGuideTarget ? runGuideDataFor(runGuideTarget.dayId, runGuideTarget.missionId) : null
+  const runGuideDone = runGuideTarget
+    ? Boolean(
+        state.completed[
+          getMissionKey(state.selectedVersion, state.selectedWeek, runGuideTarget.dayId, runGuideTarget.missionId)
+        ],
+      )
+    : false
+
   const setMemo = (value) => {
     setState((current) => ({
       ...current,
@@ -1614,6 +1669,20 @@ export default function App() {
       {(aiFlow.surface === 'chip-pending' || aiFlow.surface === 'chip-error') && (
         <AiStatusChip variant={aiFlow.surface} onRetry={aiFlow.onRetry} />
       )}
+      {/* Rendered from the shared portal so desktop and mobile get the identical guide. */}
+      {runGuide && (
+        <RunSessionGuide
+          guide={runGuide}
+          lang={lang}
+          c={c}
+          isDone={runGuideDone}
+          onClose={() => setRunGuideTarget(null)}
+          onComplete={() => {
+            toggleMissionOnDay(runGuideTarget.dayId, runGuideTarget.missionId)
+            setRunGuideTarget(null)
+          }}
+        />
+      )}
     </>,
     document.body,
   )
@@ -1660,6 +1729,12 @@ export default function App() {
               // Reset version+week too — setting only selectedDay would write the completion
               // into whatever week the user had browsed to.
               goToToday()
+              // Same guide as desktop, so the two platforms describe a session identically.
+              const runSession = pickRunSession(todaySessions)
+              if (runSession) {
+                setRunGuideTarget({ dayId: runSession.dayKey, missionId: runSession.missionId })
+                return
+              }
               selectMobileTab('quest')
             }}
           />
@@ -1679,7 +1754,8 @@ export default function App() {
             isDone={(missionId) =>
               Boolean(state.completed[getMissionKey(state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)])
             }
-            onToggle={toggleMission}
+            onToggle={(missionId) => selectMission(missionId)}
+          hasGuide={(missionId) => isRunMission(selectedDay.id, missionId)}
             overlayFor={(missionId) =>
               aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)
             }
@@ -1828,7 +1904,14 @@ export default function App() {
           todaySessions={desktopTodaySessions}
           todayDone={desktopTodayDone}
           onStartToday={() => {
+            // Jump to today first, so completing from the guide writes into today's week and not
+            // whatever week the user had browsed to.
             desktopGoToToday()
+            const runSession = pickRunSession(desktopTodaySessions)
+            if (runSession) {
+              setRunGuideTarget({ dayId: runSession.dayKey, missionId: runSession.missionId })
+              return
+            }
             updateState({ activeTab: 'quest' })
           }}
         />
@@ -1849,7 +1932,8 @@ export default function App() {
           isDone={(missionId) =>
             Boolean(state.completed[getMissionKey(state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)])
           }
-          onToggle={toggleMission}
+          onToggle={(missionId) => selectMission(missionId)}
+          hasGuide={(missionId) => isRunMission(selectedDay.id, missionId)}
           overlayFor={(missionId) =>
             aiSlotFor(state.aiPlan, state.selectedVersion, state.selectedWeek, selectedDay.id, missionId)
           }
