@@ -18,6 +18,7 @@ import MobileQuest from './mobile/MobileQuest.jsx'
 import BottomNav from './mobile/BottomNav.jsx'
 import RunSessionGuide from './RunSessionGuide.jsx'
 import { deriveRunGuide, isRunSession, pickRunSession } from './runGuide.js'
+import { buildC25kFallbackOverlay } from './c25kFallback.js'
 import DesktopShell from './desktop/DesktopShell.jsx'
 import DesktopHome from './desktop/DesktopHome.jsx'
 import DesktopQuest from './desktop/DesktopQuest.jsx'
@@ -1338,13 +1339,44 @@ export default function App() {
     [currentUserId],
   )
 
+  // Deterministic c25k fallback. Personalization comes from an offline worker, so a 5K user with
+  // no worker would otherwise sit on the generic catalog workout — which carries no resourceRef,
+  // making the running-session guide unreachable for exactly the people who asked to run.
+  // Returns false (and changes nothing) for any non-running profile.
+  const applyRunFallback = useCallback((profile, version, week) => {
+    const overlay = buildC25kFallbackOverlay({
+      profile,
+      version,
+      week,
+      defaultWeekSchedule: getDefaultWeekSchedule(version, week),
+    })
+    if (!overlay) return false
+    setState((current) => ({
+      ...current,
+      schedules: { ...current.schedules, [getScheduleKey(version, week)]: overlay.schedule },
+      aiPlan: overlay,
+    }))
+    return true
+  }, [])
+
   const handleOnboardingComplete = useCallback(
     (profile) => {
       updateState({ profile, onboarded: true }) // non-blocking: enter the dashboard immediately
+      // Applied up front rather than only on failure, so the week is valid and the guide reachable
+      // from the first render. A real model plan overwrites this overlay when/if it arrives.
+      applyRunFallback(profile, state.selectedVersion, state.selectedWeek)
       enqueueAiPlan(profile)
     },
-    [updateState, enqueueAiPlan],
+    [updateState, enqueueAiPlan, applyRunFallback, state.selectedVersion, state.selectedWeek],
   )
+
+  // Covers users who onboarded before this existed, or whose worker request failed: once the AI
+  // path gives up, fall back rather than leaving a 5K goal on a generic workout. Guarded on
+  // `!state.aiPlan` so it can never overwrite a real model plan.
+  useEffect(() => {
+    if (aiStatus !== 'error' || state.aiPlan || !state.onboarded) return
+    applyRunFallback(state.profile, state.selectedVersion, state.selectedWeek)
+  }, [aiStatus, state.aiPlan, state.onboarded, state.profile, state.selectedVersion, state.selectedWeek, applyRunFallback])
 
   useEffect(() => {
     if (aiStatus !== 'pending' || !currentUserId) return

@@ -41,7 +41,9 @@ export function slotKey(day, missionId) {
 }
 
 // Ordered (day) list where the default plan places `missionId`, in mon->sun order.
-function slotsFor(defaultWeekSchedule, missionId) {
+// Exported so the deterministic c25k fallback places sessions on exactly the same slots the model
+// overlay would, instead of re-deriving day placement and drifting from it.
+export function slotsFor(defaultWeekSchedule, missionId) {
   const out = []
   for (const day of DAYS) {
     for (const id of defaultWeekSchedule[day] ?? []) {
